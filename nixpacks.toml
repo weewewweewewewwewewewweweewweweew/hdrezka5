@@ -1,6 +1,6 @@
 [phases.setup]
 aptPkgs = [
-    "...", # Используем стандартные пакеты Nixpacks
+    "...",
     "wget",
     "unzip",
     "libglib2.0-0",
@@ -9,7 +9,4 @@ aptPkgs = [
     "libfontconfig1",
     "google-chrome-stable"
 ]
-nixPkgs = ["...", "chromedriver"] # Добавляем chromedriver
-
-[start]
-cmd = "gunicorn app:app --timeout 120"
+nixPkgs = ["...", "chromedriver"]
