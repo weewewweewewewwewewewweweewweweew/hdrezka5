@@ -10,9 +10,8 @@ import os
 
 # --- Flask App Initialization ---
 app = Flask(__name__)
-# Эта строчка важна для корректной работы с кириллицей в JSON
 app.config['JSON_AS_ASCII'] = False
-CORS(app) # Разрешаем кросс-доменные запросы
+CORS(app)
 
 # --- Константы и Настройки ---
 BASE_URL = 'https://hdrezka.ag'
@@ -22,14 +21,22 @@ HEADERS = {
 }
 MAX_WORKERS = 8
 
-# --- Функция поиска через requests (надежная замена Selenium) ---
+# --- Функция поиска через requests ---
 def find_movie_url_with_requests(session, search_query: str) -> str | None:
     search_ajax_url = urljoin(BASE_URL, "/ajax/search/")
     payload = {'q': search_query}
+    
+    # --- ВОТ КЛЮЧЕВОЕ ИЗМЕНЕНИЕ ---
+    # Добавляем заголовки, которые делают запрос неотличимым от браузерного
+    post_headers = HEADERS.copy()
+    post_headers['Referer'] = BASE_URL + '/'
+    post_headers['X-Requested-With'] = 'XMLHttpRequest'
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
+
     try:
         print(f"1. Выполняю AJAX-поиск для '{search_query}'...")
-        # Важно передавать заголовки, чтобы имитировать браузер
-        response = session.post(search_ajax_url, data=payload, headers=HEADERS, timeout=10)
+        # Используем новые, усиленные заголовки
+        response = session.post(search_ajax_url, data=payload, headers=post_headers, timeout=10)
         response.raise_for_status()
         
         html_results = response.text
@@ -38,8 +45,8 @@ def find_movie_url_with_requests(session, search_query: str) -> str | None:
              return None
 
         soup = BeautifulSoup(html_results, 'lxml')
-        
         link_tag = soup.select_one("li.b-search__section_item a")
+        
         if link_tag and link_tag.has_attr('href'):
             movie_url = link_tag['href']
             print(f"   Найдена основная страница фильма: {movie_url}")
