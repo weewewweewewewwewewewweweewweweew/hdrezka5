@@ -1,12 +1,2 @@
-[phases.setup]
-aptPkgs = [
-    "...",
-    "wget",
-    "unzip",
-    "libglib2.0-0",
-    "libnss3",
-    "libgconf-2-4",
-    "libfontconfig1",
-    "google-chrome-stable"
-]
-nixPkgs = ["...", "chromedriver"]
+[start]
+cmd = "gunicorn app:app --timeout 120"
