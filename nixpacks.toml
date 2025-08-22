@@ -1,4 +1,15 @@
-# Этот файл можно оставить пустым или удалить, 
-# но для ясности лучше оставить его с минимумом
+[phases.setup]
+aptPkgs = [
+    "...", # Используем стандартные пакеты Nixpacks
+    "wget",
+    "unzip",
+    "libglib2.0-0",
+    "libnss3",
+    "libgconf-2-4",
+    "libfontconfig1",
+    "google-chrome-stable"
+]
+nixPkgs = ["...", "chromedriver"] # Добавляем chromedriver
+
 [start]
 cmd = "gunicorn app:app --timeout 120"
