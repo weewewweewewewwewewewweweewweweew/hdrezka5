@@ -11,7 +11,8 @@ import os
 # --- Flask App Initialization ---
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
-CORS(app)
+# Усиленная настройка CORS, разрешающая запросы отовсюду
+CORS(app, resources={r"/search-franchise": {"origins": "*"}})
 
 # --- Константы и Настройки ---
 BASE_URL = 'https://hdrezka.ag'
@@ -30,32 +31,27 @@ def find_movie_url_with_requests(session, search_query: str) -> str | None:
     post_headers['Referer'] = BASE_URL + '/'
     post_headers['X-Requested-With'] = 'XMLHttpRequest'
 
-    try:
-        print(f"1. Выполняю AJAX-поиск для '{search_query}'...")
-        response = session.post(search_ajax_url, data=payload, headers=post_headers, timeout=10)
-        response.raise_for_status()
-        
-        html_results = response.text
-        if not html_results.strip():
-             print(f"   Пустой ответ от AJAX поиска для '{search_query}'.")
-             return None
+    print(f"1. Выполняю AJAX-поиск для '{search_query}'...")
+    response = session.post(search_ajax_url, data=payload, headers=post_headers, timeout=15)
+    response.raise_for_status()
+    
+    html_results = response.text
+    if not html_results.strip():
+         print(f"   Пустой ответ от AJAX поиска для '{search_query}'.")
+         return None
 
-        soup = BeautifulSoup(html_results, 'lxml')
-        link_tag = soup.select_one("li.b-search__section_item a")
-        
-        if link_tag and link_tag.has_attr('href'):
-            movie_url = link_tag['href']
-            print(f"   Найдена основная страница фильма: {movie_url}")
-            return movie_url
-        else:
-            print(f"   Не найдено результатов по запросу '{search_query}'.")
-            return None
-    except requests.RequestException as e:
-        print(f"   Произошла ошибка во время поиска (requests): {e}")
+    soup = BeautifulSoup(html_results, 'lxml')
+    link_tag = soup.select_one("li.b-search__section_item a")
+    
+    if link_tag and link_tag.has_attr('href'):
+        movie_url = link_tag['href']
+        print(f"   Найдена основная страница фильма: {movie_url}")
+        return movie_url
+    else:
+        print(f"   Не найдено результатов по запросу '{search_query}'.")
         return None
 
-# --- Функции парсинга (без изменений) ---
-
+# --- Функции парсинга ---
 def get_movie_details(html_content: str) -> dict:
     soup = BeautifulSoup(html_content, 'lxml')
     details = {'english_title': 'N/A', 'year': 'N/A'}
@@ -74,7 +70,7 @@ def get_movie_details(html_content: str) -> dict:
     return details
 
 def fetch_details_and_links(session, url: str) -> dict:
-    response = session.get(url, headers=HEADERS, timeout=10)
+    response = session.get(url, headers=HEADERS, timeout=15)
     response.raise_for_status()
     html = response.text
     details = get_movie_details(html)
@@ -94,11 +90,7 @@ def process_franchise_concurrently(session, start_url: str) -> list:
         while futures:
             for future in as_completed(futures):
                 futures.remove(future)
-                try:
-                    result = future.result()
-                except Exception as e:
-                    print(f"  ! Задача для URL {future} завершилась с ошибкой: {e}")
-                    continue
+                result = future.result() # Если здесь будет ошибка, она будет поймана в основном блоке
                 final_results.append(result['details'])
                 for link in result['new_links']:
                     if link not in submitted_urls:
@@ -109,37 +101,44 @@ def process_franchise_concurrently(session, start_url: str) -> list:
     return final_results
 
 # --- API Endpoint ---
-
 @app.route('/search-franchise', methods=['GET'])
 def search_franchise():
     movie_title = request.args.get('q')
     if not movie_title:
         return jsonify({"error": "Query parameter 'q' is required"}), 400
 
-    print(f"\n--- Получен новый запрос: '{movie_title}' ---")
-    
-    with requests.Session() as session:
-        # --- ВОТ САМАЯ ГЛАВНАЯ НОВАЯ СТРОКА ---
-        session.get(BASE_URL, headers=HEADERS, timeout=10) # Получаем cookies с главной страницы
-        # ------------------------------------
-
-        initial_movie_url = find_movie_url_with_requests(session, movie_title)
+    try:
+        print(f"\n--- Получен новый запрос: '{movie_title}' ---")
         
-        if not initial_movie_url:
-            return jsonify({"error": f"Movie '{movie_title}' not found"}), 404
+        with requests.Session() as session:
+            session.get(BASE_URL, headers=HEADERS, timeout=15) # Получаем cookies
+            
+            initial_movie_url = find_movie_url_with_requests(session, movie_title)
+            
+            if not initial_movie_url:
+                return jsonify({"error": f"Movie '{movie_title}' not found"}), 404
 
-        print("2. Начинаю ускоренный сбор данных...")
-        try:
+            print("2. Начинаю ускоренный сбор данных...")
             detailed_movies_list = process_franchise_concurrently(session, initial_movie_url)
+            
             if detailed_movies_list:
                 detailed_movies_list.sort(key=lambda x: str(x['year']))
                 print("--- Запрос успешно обработан ---")
                 return jsonify(detailed_movies_list)
             else:
                 return jsonify({"error": "Could not extract franchise data"}), 500
-        except Exception as e:
-            print(f"--- Ошибка на этапе парсинга: {e} ---")
-            return jsonify({"error": "An error occurred during parsing"}), 500
+
+    except requests.exceptions.Timeout:
+        print("--- ! Ошибка: Сайт hdrezka не ответил вовремя. ---")
+        return jsonify({"error": "The target site (HDRezka) timed out."}), 504 # Gateway Timeout
+    except requests.exceptions.RequestException as e:
+        print(f"--- ! Ошибка сети при обращении к hdrezka: {e} ---")
+        return jsonify({"error": f"Network error when contacting HDRezka: {e}"}), 502 # Bad Gateway
+    except Exception as e:
+        # Эта секция поймает ЛЮБУЮ другую ошибку и вернет ее в JSON
+        print(f"--- ! Произошла непредвиденная ошибка на сервере: {e} ---")
+        return jsonify({"error": f"An unexpected server error occurred: {str(e)}"}), 500
 
 if __name__ == "__main__":
-    port = int(os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
