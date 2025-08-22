@@ -26,16 +26,12 @@ def find_movie_url_with_requests(session, search_query: str) -> str | None:
     search_ajax_url = urljoin(BASE_URL, "/ajax/search/")
     payload = {'q': search_query}
     
-    # --- ВОТ КЛЮЧЕВОЕ ИЗМЕНЕНИЕ ---
-    # Добавляем заголовки, которые делают запрос неотличимым от браузерного
     post_headers = HEADERS.copy()
     post_headers['Referer'] = BASE_URL + '/'
     post_headers['X-Requested-With'] = 'XMLHttpRequest'
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
     try:
         print(f"1. Выполняю AJAX-поиск для '{search_query}'...")
-        # Используем новые, усиленные заголовки
         response = session.post(search_ajax_url, data=payload, headers=post_headers, timeout=10)
         response.raise_for_status()
         
@@ -123,6 +119,10 @@ def search_franchise():
     print(f"\n--- Получен новый запрос: '{movie_title}' ---")
     
     with requests.Session() as session:
+        # --- ВОТ САМАЯ ГЛАВНАЯ НОВАЯ СТРОКА ---
+        session.get(BASE_URL, headers=HEADERS, timeout=10) # Получаем cookies с главной страницы
+        # ------------------------------------
+
         initial_movie_url = find_movie_url_with_requests(session, movie_title)
         
         if not initial_movie_url:
@@ -142,5 +142,4 @@ def search_franchise():
             return jsonify({"error": "An error occurred during parsing"}), 500
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    port = int(os
